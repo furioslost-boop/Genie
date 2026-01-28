@@ -2,22 +2,9 @@
 export type Platform = 'Meta' | 'Google' | 'LinkedIn' | 'TikTok';
 export type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9' | '4:5';
 
-export interface AdTemplate {
-  id: string;
-  name: string;
-  layers: EditorLayer[];
-  aspectRatio: AspectRatio;
-}
-
-export interface BrandAssets {
-  colors: string[]; // Suporta até 10 cores
-  moodboardImage?: string; // base64
-  extractedStyle?: string;
-}
-
 export interface EditorLayer {
   id: string;
-  type: 'text' | 'button' | 'shape';
+  type: 'text' | 'button';
   content: string;
   x: number;
   y: number;
@@ -25,11 +12,19 @@ export interface EditorLayer {
   height: number;
   fontSize: number;
   color: string;
-  backgroundColor?: string;
   fontFamily: string;
-  borderRadius?: number;
-  padding?: number;
   opacity?: number;
+  backgroundColor?: string;
+  borderRadius?: number;
+}
+
+export interface BrandAssets {
+  colors: string[]; 
+  moodboardImages?: string[]; // array de base64
+  extractedStyle?: string;
+  figmaUrl?: string;
+  figmaToken?: string;
+  brandUrl?: string; // Novo: URL do site ou Instagram
 }
 
 export interface AdRequest {

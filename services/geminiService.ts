@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { AdRequest, AdCopy, BrandAssets } from "../types";
+import { AdRequest, AdCopy, AdCreative } from "../types";
 
 export const getAIClient = () => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -15,161 +15,181 @@ async function callWithRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T
       return await fn();
     } catch (err: any) {
       lastError = err;
-      const msg = err.message || "";
-      console.error(`Attempt ${i + 1} failed:`, msg);
-      
-      if (msg.includes("Requested entity was not found")) {
-         throw new Error("API_KEY_NOT_FOUND");
-      }
-      if (msg.includes("503") || msg.includes("overloaded") || msg.includes("429") || msg.includes("Deadline exceeded")) {
-        const waitTime = Math.pow(2, i) * 1000 + Math.random() * 500;
-        await delay(waitTime);
+      const msg = (err.message || "").toLowerCase();
+      const isRetryable = msg.includes("429") || msg.includes("503") || msg.includes("overloaded") || msg.includes("unavailable");
+      if (isRetryable && i < maxRetries - 1) {
+        await delay(500 + Math.random() * 500);
         continue;
       }
-      throw err;
+      break;
     }
   }
   throw lastError;
 }
 
-export const analyzeMoodboard = async (base64Image: string): Promise<string> => {
-  const ai = getAIClient();
-  const prompt = `Analise esta imagem de referência de marca (moodboard). 
-  Extraia o estilo visual, a paleta de cores predominante, a vibe do design (ex: minimalista, luxuoso, tech) e sugira uma tipografia que combine. 
-  Responda de forma concisa em Português para ser usado como instrução de design.`;
+const VARIETY_STYLES = [
+  "Fotografia comercial de estúdio, iluminação natural.",
+  "Minimalismo elegante, render 3D clean.",
+  "Estilo editorial premium, cores sóbrias.",
+  "Design gráfico corporativo moderno.",
+  "Composição fotográfica nítida.",
+  "Layout publicitário contemporâneo."
+];
 
-  const response = await ai.models.generateContent({
-    model: "gemini-flash-lite-latest",
-    contents: {
-      parts: [
-        { inlineData: { mimeType: "image/jpeg", data: base64Image.split(',')[1] } },
-        { text: prompt }
-      ]
-    }
+/**
+ * Analisa a presença online de uma marca para extrair o DNA visual.
+ */
+export const analyzeBrandPresence = async (url: string): Promise<string> => {
+  return callWithRetry(async () => {
+    const ai = getAIClient();
+    const prompt = `Analise o site ou perfil social: ${url}. 
+    Descreva detalhadamente a IDENTIDADE VISUAL da marca (paleta de cores predominante, estilo de fotografia, iluminação, tom de voz visual). 
+    Seja específico para que um designer possa replicar o estilo. 
+    Não use termos genéricos. Foque no que torna a marca única.`;
+
+    const res = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }]
+      }
+    });
+    return res.text || "Estilo Premium e Moderno";
   });
-  return response.text || "";
+};
+
+/**
+ * Gera um criativo completo garantindo consistência de identidade visual.
+ */
+export const generateCompleteCreative = async (req: AdRequest, index: number): Promise<AdCreative> => {
+  return callWithRetry(async () => {
+    const ai = getAIClient();
+    const style = VARIETY_STYLES[index % VARIETY_STYLES.length];
+    const brandDna = req.brandAssets?.extractedStyle || "Estilo Moderno";
+    
+    // Prompt focado em CONSISTÊNCIA e IDENTIDADE COMPARTILHADA
+    const prompt = `DIRETOR DE ARTE: Gere o criativo #${index + 1} para a marca "${req.productName}".
+    
+    IDENTIDADE VISUAL COMPARTILHADA (MANDATÓRIO):
+    - DNA Visual da Marca: ${brandDna}
+    - Referência Visual: Utilize as cores, texturas e luzes da imagem anexada.
+    - TODOS os anúncios deste lote devem parecer parte da mesma campanha.
+    
+    RESTRIÇÃO DE DESIGN: 
+    - NUNCA use elementos neon, luzes fluorescentes ou estética neon.
+    - Mantenha um visual profissional, limpo e de alta conversão.
+    - Estilo da Imagem: ${style}. Cena: ${req.creativeDirection}.
+       
+    COPY (PORTUGUÊS BRASIL): Zero erros gramaticais.
+    JSON: {"hook":"frase","headline":"titulo","primaryText":"texto","cta":"acao"}
+    
+    Envie Imagem + JSON.`;
+
+    const parts: any[] = [];
+    if (req.brandAssets?.moodboardImages?.length) {
+      // Usamos apenas a primeira imagem como âncora principal de estilo para economizar tokens e garantir foco
+      const imgBase64 = req.brandAssets.moodboardImages[0];
+      parts.push({ 
+        inlineData: { 
+          mimeType: "image/jpeg", 
+          data: imgBase64.includes(',') ? imgBase64.split(',')[1] : imgBase64 
+        } 
+      });
+    }
+    parts.push({ text: prompt });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: { parts },
+      config: {
+        imageConfig: { 
+          aspectRatio: req.aspectRatio === '4:5' ? '3:4' : req.aspectRatio 
+        },
+        systemInstruction: "Você é um especialista em Branding. Sua missão é garantir que cada imagem gerada siga RIGOROSAMENTE a identidade visual da marca descrita, criando uma unidade estética entre todos os criativos. Ortografia perfeita em PT-BR é obrigatória."
+      }
+    });
+
+    const candidate = response.candidates?.[0];
+    if (!candidate) throw new Error("A Engine não retornou dados.");
+
+    let imageUrl = '';
+    let copy: AdCopy = { hook: '', headline: '', primaryText: '', cta: '' };
+
+    for (const part of candidate.content.parts) {
+      if (part.inlineData) {
+        imageUrl = `data:image/png;base64,${part.inlineData.data}`;
+      } else if (part.text) {
+        const jsonMatch = part.text.match(/{.*}/s);
+        if (jsonMatch) {
+          try { 
+            const parsed = JSON.parse(jsonMatch[0]);
+            copy = {
+              hook: parsed.hook || '',
+              headline: parsed.headline || '',
+              primaryText: parsed.primaryText || '',
+              cta: parsed.cta || ''
+            };
+          } catch (e) { /* ignore */ }
+        }
+      }
+    }
+
+    if (!imageUrl) imageUrl = await generateAdImage(req, copy, index);
+    if (!imageUrl) throw new Error("Falha ao gerar visual.");
+
+    return {
+      id: Math.random().toString(36).substr(2, 9),
+      copy,
+      imageUrl,
+      platform: req.platform,
+      aspectRatio: req.aspectRatio,
+      timestamp: Date.now()
+    };
+  });
 };
 
 export const generateAdCopy = async (req: AdRequest): Promise<AdCopy> => {
   return callWithRetry(async () => {
     const ai = getAIClient();
-    const model = req.ultraSpeed ? "gemini-3-flash-preview" : "gemini-3-pro-preview";
-    
-    const brandContext = req.brandAssets?.extractedStyle ? `ESTILO VISUAL DA MARCA: ${req.brandAssets.extractedStyle}` : 'ESTILO: Design Publicitário Moderno de Alto Nível.';
-    const colorContext = req.brandAssets?.colors?.length 
-      ? `PALETA DE CORES DA MARCA: ${req.brandAssets.colors.join(', ')}` 
-      : 'OBSERVAÇÃO: Use cores que transmitam autoridade, confiança e desejo de compra de acordo com o nicho do produto.';
-
-    const prompt = `VOCÊ É O MAIOR REDATOR PUBLICITÁRIO DO MUNDO, MESTRE EM MARKETING DE RESPOSTA DIRETA (DRM).
-    Crie uma copy extremamente persuasiva para ${req.platform} focada em conversão.
-    
-    PRODUTO: ${req.productName}
-    BRIEFING: ${req.creativeDirection}
-    TOM: ${req.tone}
-    OBJETIVO: ${req.goal}
-    ${brandContext}
-    ${colorContext}
-    
-    Instruções Psicológicas:
-    - O Hook deve interromper o scroll imediatamente.
-    - A Headline deve focar no benefício principal ou em uma curiosidade impossível de ignorar.
-    - O Primary Text deve usar a estrutura AIDA ou PAS (Problema, Agitação, Solução).
-    
-    Retorne um JSON estrito com:
-    - hook: frase curta e explosiva.
-    - headline: título curto, poderoso e direto.
-    - primaryText: texto persuasivo e emocional (2-3 parágrafos curtos).
-    - cta: chamada para ação irresistível.`;
-
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            hook: { type: Type.STRING },
-            headline: { type: Type.STRING },
-            primaryText: { type: Type.STRING },
-            cta: { type: Type.STRING },
-          },
-          required: ["hook", "headline", "primaryText", "cta"]
-        }
-      }
+    const res = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Gere copy em PT-BR para: "${req.productName}". DNA Visual: ${req.brandAssets?.extractedStyle}. JSON: {"hook":"str","headline":"str","primaryText":"str","cta":"str"}`,
+      config: { responseMimeType: "application/json" }
     });
-    
-    if (!response.text) throw new Error("Erro na geração da copy.");
-    return JSON.parse(response.text.trim()) as AdCopy;
+    return JSON.parse(res.text.trim());
   });
 };
 
-export const generateAdImage = async (req: AdRequest): Promise<string> => {
+export const generateAdImage = async (req: AdRequest, copy: AdCopy, styleIndex: number = 0): Promise<string> => {
   return callWithRetry(async () => {
     const ai = getAIClient();
-    const isPro = !req.ultraSpeed;
-    const modelName = isPro ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
-    
-    const brandContext = req.brandAssets?.extractedStyle ? `ESTILO VISUAL: ${req.brandAssets.extractedStyle}.` : 'ESTILO: Fotografia comercial de luxo, estética premium Apple/Nike.';
-    const colorContext = req.brandAssets?.colors?.length 
-      ? `PALETA: ${req.brandAssets.colors.join(', ')}.` 
-      : 'CORES: Crie uma harmonia cromática profissional baseada em cores análogas ou complementares de alto contraste que combinem com o produto.';
-
-    const promptText = `Gere um fundo fotográfico comercial de ultra-qualidade para o produto: "${req.productName}".
-    DESCRIÇÃO CRIATIVA: ${req.creativeDirection}
-    ${brandContext}
-    ${colorContext}
-
-    ESPECIFICAÇÕES TÉCNICAS DE DESIGN:
-    - Iluminação de estúdio (Rim lighting, Softbox).
-    - Composição de regra dos terços, focada em criar desejo.
-    - Renderização fotorrealista com texturas detalhadas e profundidade de campo cinematográfica.
-    - Estética limpa, organizada e moderna.
-    - REQUISITO ABSOLUTO: SEM TEXTOS, NÚMEROS OU LETRAS DE QUALQUER TIPO. Apenas a imagem visual.
-    - O resultado deve parecer um anúncio de revista de luxo ou um post de marca global de tecnologia.`;
-
-    const parts: any[] = [{ text: promptText }];
-    
-    if (req.brandAssets?.moodboardImage) {
-      parts.unshift({
-        inlineData: {
-          mimeType: "image/jpeg",
-          data: req.brandAssets.moodboardImage.split(',')[1]
-        }
-      });
+    const style = VARIETY_STYLES[styleIndex % VARIETY_STYLES.length];
+    const dna = req.brandAssets?.extractedStyle || "Estilo Premium";
+    const prompt = `Campaign Ad. DNA: ${dna}. Subject: ${req.creativeDirection}. Style: ${style}. NO NEON. Clean. High Res.`;
+    const parts: any[] = [];
+    if (req.brandAssets?.moodboardImages?.length) {
+      const img = req.brandAssets.moodboardImages[0];
+      parts.push({ inlineData: { mimeType: "image/jpeg", data: img.includes(',') ? img.split(',')[1] : img } });
     }
-
-    const apiAspectRatio = req.aspectRatio === '4:5' ? '3:4' : req.aspectRatio;
-
-    const imageConfig: any = {
-      aspectRatio: apiAspectRatio || "1:1",
-    };
-
-    if (isPro) {
-      imageConfig.imageSize = "1K";
-    }
-
-    const response = await ai.models.generateContent({
-      model: modelName,
+    parts.push({ text: prompt });
+    const res = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
       contents: { parts },
-      config: {
-        imageConfig,
-      }
+      config: { imageConfig: { aspectRatio: req.aspectRatio === '4:5' ? '3:4' : req.aspectRatio } }
     });
+    const imgPart = res.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+    return imgPart ? `data:image/png;base64,${imgPart.inlineData.data}` : '';
+  });
+};
 
-    const candidate = response.candidates?.[0];
-    if (!candidate) throw new Error("A IA não retornou resultados.");
-    
-    const imagePart = candidate.content.parts.find(p => p.inlineData);
-    if (imagePart?.inlineData) {
-      return `data:image/png;base64,${imagePart.inlineData.data}`;
-    }
-
-    const textPart = candidate.content.parts.find(p => p.text);
-    if (textPart?.text) {
-      throw new Error(`A geração foi recusada pela IA: ${textPart.text}`);
-    }
-
-    throw new Error("Erro desconhecido na geração da imagem.");
+export const analyzeMoodboard = async (imagesBase64: string[]): Promise<string> => {
+  return callWithRetry(async () => {
+    const ai = getAIClient();
+    const parts = imagesBase64.slice(0, 1).map(b => ({ 
+      inlineData: { data: b.includes(',') ? b.split(',')[1] : b, mimeType: "image/jpeg" } 
+    }));
+    parts.push({ text: "Descreva o DNA visual desta marca (cores, iluminação, estilo) em 20 palavras." } as any);
+    const res = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: { parts } });
+    return res.text?.trim() || "Estilo Visual Premium";
   });
 };
