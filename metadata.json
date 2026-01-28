@@ -1,0 +1,7 @@
+{
+  "name": "AdGenie AI - Creative Ad Studio",
+  "description": "An advanced ad creative generator that produces high-converting ad copy and stunning visuals using Gemini AI. Perfect for Meta, Google, and LinkedIn ads.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
