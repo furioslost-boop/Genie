@@ -39,6 +39,11 @@
         .light-mode ::-webkit-scrollbar-thumb {
             background: #cbd5e1;
         }
+
+        /* Responsive Sidebar Transition */
+        .sidebar-transition {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
     </style>
 <script type="importmap">
 {
@@ -49,7 +54,8 @@
     "react/": "https://esm.sh/react@^19.2.4/",
     "react": "https://esm.sh/react@^19.2.4",
     "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-    "jspdf": "https://esm.sh/jspdf@^2.5.1"
+    "jspdf": "https://esm.sh/jspdf@^2.5.1",
+    "jszip": "https://esm.sh/jszip@^3.10.1"
   }
 }
 </script>

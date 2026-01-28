@@ -1,15 +1,20 @@
 
 import React, { useState, useEffect } from 'react';
-import { Rocket, Box, Zap, Sun, Moon, Key, Sparkles, AlertTriangle } from 'lucide-react';
+import { Rocket, Box, Zap, Sun, Moon, Key, Sparkles, AlertTriangle, Menu, X, Download, Package, ChevronLeft, ChevronRight } from 'lucide-react';
 import { AdRequest, AdCreative, GenerationStatus } from './types';
 import { generateCompleteCreative, analyzeBrandPresence } from './services/geminiService';
 import AdForm from './components/AdForm';
 import AdPreviewCard from './components/AdPreviewCard';
 import Loader from './components/Loader';
+import JSZip from 'jszip';
+import { jsPDF } from 'jspdf';
 
 const App: React.FC = () => {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isZipping, setIsZipping] = useState(false);
+  
   const [request, setRequest] = useState<AdRequest>({
     productName: '', 
     description: '', 
@@ -19,7 +24,7 @@ const App: React.FC = () => {
     aspectRatio: '1:1', 
     ultraSpeed: true,
     designConcept: 'Criativo (Eye-catching)',
-    creativeType: ['Ultra-Realista'], // Padrão ultra-realista como array
+    creativeType: ['Ultra-Realista'], 
     tone: 'Sofisticado', 
     goal: 'Vendas', 
     quantity: 1, 
@@ -38,6 +43,10 @@ const App: React.FC = () => {
       } catch { setHasKey(false); }
     };
     checkKey();
+
+    if (window.innerWidth < 1024) {
+      setSidebarOpen(false);
+    }
   }, []);
 
   const handleGenerate = async (q = 1) => {
@@ -47,6 +56,8 @@ const App: React.FC = () => {
     setErrorMessage(null);
     setStatus(GenerationStatus.LOADING);
     
+    if (window.innerWidth < 1024) setSidebarOpen(false);
+
     try {
       let sharedDna = request.brandAssets?.extractedStyle || "";
       
@@ -67,7 +78,6 @@ const App: React.FC = () => {
 
       if (request.ultraSpeed) {
         const tasks = Array.from({ length: q }).map(async (_, i) => {
-          // Reduzido para 100ms para uma sincronização ultra-rápida real
           await new Promise(r => setTimeout(r, i * 100)); 
           try {
             const creative = await generateCompleteCreative(updatedRequest, i);
@@ -93,6 +103,76 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDownloadAll = async () => {
+    if (creatives.length === 0) return;
+    setIsZipping(true);
+    
+    const zip = new JSZip();
+    const campaignName = `Campanha_${request.productName.replace(/\s+/g, '_')}_${Date.now()}`;
+    const folder = zip.folder(campaignName);
+
+    for (const creative of creatives) {
+      const baseName = `Criativo_${String(creative.index + 1).padStart(2, '0')}_${creative.aspectRatio.replace(':', '-')}`;
+      
+      // Add Image
+      const imageData = creative.imageUrl.split(',')[1];
+      folder?.file(`${baseName}.png`, imageData, { base64: true });
+
+      // Create PDF using robust pagination logic
+      const doc = new jsPDF();
+      const margin = 20;
+      const contentWidth = 170;
+      let yPos = 20;
+
+      const checkBreak = (h: number) => {
+        if (yPos + h > 280) { doc.addPage(); yPos = 20; return true; }
+        return false;
+      };
+
+      doc.setFontSize(22);
+      doc.setTextColor(79, 70, 229);
+      doc.text("Ad Pack - Copy Review", margin, yPos);
+      yPos += 15;
+
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text("HEADLINE:", margin, yPos);
+      yPos += 7;
+      doc.setFontSize(14);
+      doc.setTextColor(0);
+      const hLines = doc.splitTextToSize(creative.copy.headline.toUpperCase(), contentWidth);
+      doc.text(hLines, margin, yPos);
+      yPos += (hLines.length * 8) + 10;
+
+      checkBreak(15);
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text("TEXTO PRINCIPAL:", margin, yPos);
+      yPos += 7;
+      doc.setFontSize(11);
+      doc.setTextColor(50);
+      const pLines = doc.splitTextToSize(creative.copy.primaryText, contentWidth);
+      for (const line of pLines) {
+        if (checkBreak(7)) {
+            doc.setFontSize(11);
+            doc.setTextColor(50);
+        }
+        doc.text(line, margin, yPos);
+        yPos += 6.5;
+      }
+
+      const pdfBlob = doc.output('blob');
+      folder?.file(`${baseName}_Pack.pdf`, pdfBlob);
+    }
+
+    const content = await zip.generateAsync({ type: "blob" });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(content);
+    link.download = `${campaignName}.zip`;
+    link.click();
+    setIsZipping(false);
+  };
+
   const uiColors = {
     bg: theme === 'dark' ? 'bg-[#0a0a0a]' : 'bg-white',
     border: theme === 'dark' ? 'border-white/10' : 'border-slate-200',
@@ -113,60 +193,111 @@ const App: React.FC = () => {
 
   return (
     <div className={`h-screen w-screen flex flex-col ${uiColors.panel} font-sans overflow-hidden transition-colors`}>
-      <nav className={`h-16 border-b ${uiColors.border} ${uiColors.bg} flex items-center justify-between px-6 z-[60]`}>
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Box className="w-6 h-6 text-white" />
+      {/* Navbar Global */}
+      <nav className={`h-16 border-b ${uiColors.border} ${uiColors.bg} flex items-center justify-between px-4 lg:px-6 z-[60] shrink-0`}>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 bg-white/5 rounded-xl text-slate-400 hover:text-white transition-all active:scale-90"
+          >
+            {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+          <div className="flex items-center gap-2 lg:gap-4 ml-1">
+            <div className="w-8 h-8 lg:w-9 lg:h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <Box className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-[12px] font-black text-white uppercase tracking-tighter hidden xs:block">AdStudio <span className="text-indigo-500">Ultra</span></span>
           </div>
-          <span className="text-[13px] font-black text-white uppercase tracking-tighter">AdStudio <span className="text-indigo-500">Ultra</span></span>
         </div>
-        <div className="flex items-center gap-4">
-          <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2.5 bg-white/5 rounded-xl text-slate-400 hover:text-white transition-all">
+        
+        <div className="flex items-center gap-2">
+          {creatives.length > 0 && (
+            <button 
+              onClick={handleDownloadAll}
+              disabled={isZipping}
+              className="px-4 py-2 bg-emerald-600/10 border border-emerald-500/20 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-xl font-black text-[9px] flex items-center gap-2 transition-all uppercase tracking-widest"
+            >
+              {isZipping ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Package className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{isZipping ? 'Processando...' : 'Baixar ZIP'}</span>
+            </button>
+          )}
+
+          <div className="h-6 w-px bg-white/10 mx-1 hidden sm:block" />
+
+          <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 bg-white/5 rounded-xl text-slate-400 hover:text-white transition-all">
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
+          
           <button 
             onClick={() => setRequest({...request, ultraSpeed: !request.ultraSpeed})} 
-            className={`px-5 py-2.5 rounded-xl text-[10px] font-black border transition-all ${request.ultraSpeed ? 'bg-indigo-600 border-indigo-500 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]' : 'bg-white/5 border-white/5 text-slate-500'}`}
+            className={`px-3 lg:px-4 py-2 rounded-xl text-[9px] font-black border transition-all flex items-center gap-2 ${request.ultraSpeed ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-white/5 border-white/5 text-slate-500'}`}
           >
-            <Zap className={`w-3.5 h-3.5 inline mr-2 ${request.ultraSpeed ? 'fill-current' : ''}`} /> 
-            {request.ultraSpeed ? 'SINCRONIA ULTRA' : 'MÁXIMA QUALIDADE'}
+            <Zap className={`w-3.5 h-3.5 ${request.ultraSpeed ? 'fill-current' : ''}`} /> 
+            <span className="hidden md:inline">{request.ultraSpeed ? 'TURBO' : 'QUALIDADE'}</span>
           </button>
         </div>
       </nav>
 
-      <div className="flex-1 flex overflow-hidden">
-        <aside className={`w-80 ${uiColors.bg} border-r ${uiColors.border} p-6 overflow-y-auto custom-scrollbar shrink-0`}>
-          <AdForm request={request} onChange={setRequest} onGenerate={handleGenerate} isLoading={status === GenerationStatus.LOADING} theme={theme} />
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Mobile Backdrop */}
+        <div 
+          className={`fixed inset-0 bg-black/60 z-[50] lg:hidden backdrop-blur-sm transition-opacity duration-300 ${sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+          onClick={() => setSidebarOpen(false)}
+        />
+
+        {/* Sidebar - Collapsible Universal */}
+        <aside 
+          className={`fixed lg:static inset-y-0 left-0 z-[55] ${uiColors.bg} border-r ${uiColors.border} overflow-y-auto custom-scrollbar sidebar-transition ${sidebarOpen ? 'w-80 translate-x-0 p-6' : 'w-0 -translate-x-full lg:translate-x-0 lg:p-0 lg:border-r-0'}`}
+        >
+          <div className={`${!sidebarOpen && 'opacity-0 invisible'} transition-all duration-300 w-68`}>
+            <AdForm request={request} onChange={setRequest} onGenerate={handleGenerate} isLoading={status === GenerationStatus.LOADING} theme={theme} />
+          </div>
         </aside>
 
-        <main className="flex-1 overflow-y-auto p-8 lg:p-12 bg-[#080808] canvas-bg-dark custom-scrollbar relative">
+        {/* Workspace Canvas */}
+        <main className="flex-1 overflow-y-auto p-4 lg:p-12 bg-[#080808] canvas-bg-dark custom-scrollbar relative">
           {status === GenerationStatus.ERROR && errorMessage && (
-            <div className="max-w-xl mx-auto mb-12 p-10 bg-red-500/5 border border-red-500/20 rounded-[3rem] text-center shadow-2xl">
-              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                <AlertTriangle className="w-8 h-8 text-red-500" />
+            <div className="max-w-xl mx-auto mb-12 p-10 bg-red-500/5 border border-red-500/20 rounded-[3rem] text-center shadow-2xl animate-in zoom-in-95">
+              <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-6" />
+              <h3 className="text-sm font-black text-white uppercase tracking-widest mb-4">Falha na Engine</h3>
+              <p className="text-[11px] text-red-400 font-bold uppercase mb-8 leading-relaxed">{errorMessage}</p>
+              <button onClick={() => setStatus(GenerationStatus.IDLE)} className="bg-red-500 text-white px-10 py-5 rounded-3xl font-black uppercase text-[10px] tracking-widest hover:bg-red-600 transition-all shadow-xl active:scale-95">Ajustar Prompt</button>
+            </div>
+          )}
+
+          {creatives.length > 0 && (
+            <div className="max-w-[1700px] mx-auto mb-12 flex flex-col sm:flex-row items-center justify-between gap-6 animate-in slide-in-from-top-4">
+              <div>
+                <h2 className="text-white font-black text-xl lg:text-2xl uppercase tracking-tighter">Sua Campanha <span className="text-indigo-500">Pronta</span></h2>
+                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.3em] mt-1">{creatives.length} criativos de alta performance gerados</p>
               </div>
-              <h3 className="text-sm font-black text-white uppercase tracking-[0.2em] mb-4">Erro na Prompt Master</h3>
-              <p className="text-[11px] text-red-400 font-bold uppercase tracking-[0.15em] mb-8 leading-relaxed max-w-sm mx-auto">{errorMessage}</p>
-              <button onClick={() => setStatus(GenerationStatus.IDLE)} className="flex items-center gap-3 mx-auto text-[10px] font-black text-white uppercase tracking-[0.2em] bg-red-500 px-10 py-5 rounded-3xl hover:bg-red-600 transition-all shadow-xl active:scale-95">Revisar Prompt</button>
+              <button 
+                onClick={handleDownloadAll}
+                disabled={isZipping}
+                className="w-full sm:w-auto px-8 py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black text-[11px] flex items-center justify-center gap-3 transition-all shadow-2xl shadow-indigo-900/40 active:scale-95 uppercase tracking-widest"
+              >
+                {isZipping ? <Loader /> : <Package className="w-4 h-4" />}
+                <span>{isZipping ? 'Compactando...' : 'Baixar Campanha Completa (ZIP)'}</span>
+              </button>
             </div>
           )}
 
           {creatives.length === 0 && status !== GenerationStatus.LOADING && status !== GenerationStatus.ERROR ? (
-            <div className="h-full flex flex-col items-center justify-center opacity-10">
+            <div className="h-full flex flex-col items-center justify-center opacity-10 select-none">
               <Sparkles className="w-24 h-24 text-indigo-500 mb-8" />
-              <h3 className="text-[20px] font-black uppercase tracking-[0.5em] text-white">Pronto para Criar</h3>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2">Sua prompt dita as regras</p>
+              <h3 className="text-[20px] font-black uppercase tracking-[0.5em] text-white text-center">Engine Criativa Ociosa</h3>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2">Configure os parâmetros na barra lateral</p>
             </div>
           ) : (
-            <div className="max-w-[1700px] mx-auto space-y-12 pb-24">
+            <div className="max-w-[1700px] mx-auto space-y-12 pb-32">
               {status === GenerationStatus.LOADING && (
                 <div className="flex flex-col items-center py-20 bg-indigo-500/5 rounded-[4rem] border border-indigo-500/10 mb-12 shadow-inner transition-all animate-in fade-in zoom-in duration-700">
                   <Loader />
-                  <div className="mt-10 space-y-3 text-center">
+                  <div className="mt-10 text-center px-6">
                     <p className="text-[13px] font-black text-indigo-400 uppercase tracking-[0.6em] animate-pulse">
-                      {request.ultraSpeed ? `SINCRONIZANDO PROMPT (${creatives.length}/${request.quantity})...` : 'RENDERIZANDO CENA CRIATIVA...'}
+                      {request.ultraSpeed ? `RENDERIZAÇÃO ACELERADA (${creatives.length}/${request.quantity})` : 'CRIANDO OBRA PRIMA VISUAL...'}
                     </p>
-                    <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Garantindo ortografia 100% precisa nos estilos selecionados</p>
+                    <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest mt-3">Refinando ortografia e equilíbrio cromático</p>
                   </div>
                 </div>
               )}
