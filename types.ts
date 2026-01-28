@@ -24,18 +24,22 @@ export interface BrandAssets {
   extractedStyle?: string;
   figmaUrl?: string;
   figmaToken?: string;
-  brandUrl?: string; // Novo: URL do site ou Instagram
+  brandUrl?: string; // URL do site ou Instagram
 }
+
+export type CreativeType = 'Ultra-Realista' | 'Apenas Texto (Tipográfico)' | 'Híbrido';
 
 export interface AdRequest {
   productName: string;
   description: string;
-  creativeDirection: string;
+  creativeDirection: string; // Instrução Master
   targetAudience: string;
   platform: Platform;
   aspectRatio: AspectRatio;
   ultraSpeed: boolean;
   tone: string;
+  designConcept: string; // Criativo, Minimalista, Sério, etc.
+  creativeType: CreativeType[]; // Agora é um array para múltiplas seleções
   goal: string;
   quantity: number;
   brandAssets?: BrandAssets;
@@ -50,6 +54,7 @@ export interface AdCopy {
 
 export interface AdCreative {
   id: string;
+  index: number; // Nova propriedade para nomeação sequencial
   copy: AdCopy;
   imageUrl: string;
   platform: Platform;

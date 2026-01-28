@@ -8,8 +8,10 @@ import {
   X,
   Maximize2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  FileText
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 
 interface AdPreviewCardProps {
   creative: AdCreative;
@@ -43,12 +45,93 @@ const AdPreviewCard: React.FC<AdPreviewCardProps> = ({ creative, onDelete }) => 
     };
   }, [isFullscreen]);
 
-  const download = (e?: React.MouseEvent) => {
+  const fileName = `Criativo ${String(creative.index + 1).padStart(2, '0')} - ${creative.aspectRatio}`;
+
+  const downloadImage = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     const link = document.createElement('a');
-    link.download = `criativo-${creative.id}.png`;
+    link.download = `${fileName}.png`;
     link.href = creative.imageUrl;
     link.click();
+  };
+
+  const downloadPDFPack = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    let yPos = 20;
+
+    // Header
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(79, 70, 229); // Indigo 600
+    doc.text("AdStudio Ultra - Creative Pack", margin, yPos);
+    yPos += 10;
+
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`${fileName} | ${creative.platform} Ad`, margin, yPos);
+    yPos += 15;
+
+    // Creative Image
+    const imgWidth = pageWidth - (margin * 2);
+    const imgHeight = (imgWidth / 1); // Simplificado
+    doc.addImage(creative.imageUrl, 'PNG', margin, yPos, imgWidth, imgHeight);
+    yPos += imgHeight + 15;
+
+    // Hook
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(79, 70, 229);
+    doc.text("HOOK DE IMPACTO:", margin, yPos);
+    yPos += 7;
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(12);
+    doc.setTextColor(30);
+    doc.text(`"${creative.copy.hook}"`, margin, yPos, { maxWidth: pageWidth - (margin * 2) });
+    yPos += 15;
+
+    // Headline
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text("HEADLINE / TÍTULO:", margin, yPos);
+    yPos += 7;
+    doc.setFontSize(14);
+    doc.setTextColor(0);
+    doc.text(creative.copy.headline.toUpperCase(), margin, yPos, { maxWidth: pageWidth - (margin * 2) });
+    yPos += 15;
+
+    // Primary Text
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text("TEXTO PRINCIPAL:", margin, yPos);
+    yPos += 7;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(50);
+    const splitText = doc.splitTextToSize(creative.copy.primaryText, pageWidth - (margin * 2));
+    doc.text(splitText, margin, yPos);
+    yPos += (splitText.length * 5) + 10;
+
+    // CTA
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text("CTA (CHAMADA PARA AÇÃO):", margin, yPos);
+    yPos += 7;
+    doc.setFontSize(12);
+    doc.setTextColor(79, 70, 229);
+    doc.text(creative.copy.cta.toUpperCase(), margin, yPos);
+
+    doc.save(`${fileName} - Pack.pdf`);
   };
 
   const handleDelete = (e: React.MouseEvent) => {
@@ -66,12 +149,13 @@ const AdPreviewCard: React.FC<AdPreviewCardProps> = ({ creative, onDelete }) => 
               {creative.platform[0]}
             </div>
             <div>
-              <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-tighter">{creative.platform} Ad</h4>
+              <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-tighter">Criativo {String(creative.index + 1).padStart(2, '0')}</h4>
               <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{creative.aspectRatio}</p>
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={download} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"><Download className="w-4 h-4" /></button>
+            <button onClick={downloadImage} title="Baixar Imagem Nomeada" className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"><Download className="w-4 h-4" /></button>
+            <button onClick={downloadPDFPack} title="Baixar Pack em PDF" className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"><FileText className="w-4 h-4" /></button>
             <button onClick={handleDelete} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"><Trash2 className="w-4 h-4" /></button>
           </div>
         </div>
@@ -141,7 +225,7 @@ const AdPreviewCard: React.FC<AdPreviewCardProps> = ({ creative, onDelete }) => 
           onClick={() => setIsFullscreen(false)}
         >
           <div className="absolute top-6 right-6 flex gap-4 z-50">
-            <button onClick={download} className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all backdrop-blur-md border border-white/20"><Download className="w-5 h-5" /></button>
+            <button onClick={downloadImage} className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all backdrop-blur-md border border-white/20"><Download className="w-5 h-5" /></button>
             <button onClick={() => setIsFullscreen(false)} className="p-3 bg-white/10 hover:bg-red-500 text-white rounded-full transition-all backdrop-blur-md border border-white/20"><X className="w-5 h-5" /></button>
           </div>
           <div className="relative max-w-4xl w-full max-h-full flex items-center justify-center">

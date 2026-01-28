@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { Rocket, Box, Zap, Sun, Moon, Key, Sparkles, AlertTriangle, RefreshCcw } from 'lucide-react';
+import { Rocket, Box, Zap, Sun, Moon, Key, Sparkles, AlertTriangle } from 'lucide-react';
 import { AdRequest, AdCreative, GenerationStatus } from './types';
-import { generateCompleteCreative, generateAdCopy, generateAdImage, analyzeBrandPresence } from './services/geminiService';
+import { generateCompleteCreative, analyzeBrandPresence } from './services/geminiService';
 import AdForm from './components/AdForm';
 import AdPreviewCard from './components/AdPreviewCard';
 import Loader from './components/Loader';
@@ -11,9 +11,19 @@ const App: React.FC = () => {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [request, setRequest] = useState<AdRequest>({
-    productName: '', description: '', creativeDirection: '', targetAudience: '',
-    platform: 'Meta', aspectRatio: '1:1', ultraSpeed: true,
-    tone: 'Sofisticado', goal: 'Vendas', quantity: 1, brandAssets: { colors: [], moodboardImages: [], brandUrl: '' }
+    productName: '', 
+    description: '', 
+    creativeDirection: '', 
+    targetAudience: '',
+    platform: 'Meta', 
+    aspectRatio: '1:1', 
+    ultraSpeed: true,
+    designConcept: 'Criativo (Eye-catching)',
+    creativeType: ['Ultra-Realista'], // Padrão ultra-realista como array
+    tone: 'Sofisticado', 
+    goal: 'Vendas', 
+    quantity: 1, 
+    brandAssets: { colors: [], moodboardImages: [], brandUrl: '' }
   });
 
   const [creatives, setCreatives] = useState<AdCreative[]>([]);
@@ -31,46 +41,43 @@ const App: React.FC = () => {
   }, []);
 
   const handleGenerate = async (q = 1) => {
-    if (!request.productName) return;
+    if (!request.productName || !request.creativeDirection) return;
     
     setCreatives([]);
     setErrorMessage(null);
     setStatus(GenerationStatus.LOADING);
     
     try {
-      // 1. Antes de gerar o lote, garantimos que temos o DNA visual consolidado
       let sharedDna = request.brandAssets?.extractedStyle || "";
       
-      // Se houver URL e ainda não analisamos, fazemos uma análise rápida síncrona agora para o DNA do lote
-      if (request.brandAssets?.brandUrl && !sharedDna.includes("DNA ONLINE")) {
+      if (request.brandAssets?.brandUrl && !sharedDna.includes("DNA DIGITAL")) {
         try {
-          const styleDna = await analyzeBrandPresence(request.brandAssets.brandUrl);
-          sharedDna = `${sharedDna}\n\nDNA ONLINE: ${styleDna}`.trim();
-        } catch (e) { console.warn("Erro na análise pré-vôo da marca:", e); }
+          const dna = await analyzeBrandPresence(request.brandAssets.brandUrl);
+          sharedDna = `DNA DIGITAL: ${dna}\n\n${sharedDna}`.trim();
+        } catch (e) { console.warn(e); }
       }
 
       const updatedRequest = {
         ...request,
         brandAssets: {
           ...(request.brandAssets || { colors: [], moodboardImages: [] }),
-          extractedStyle: sharedDna || "Estilo Visual Premium Consistente"
+          extractedStyle: sharedDna || "Estilo Visual Consistente"
         }
       };
 
       if (request.ultraSpeed) {
-        // TURBO PARALLEL: Dispara todas as requisições mantendo a mesma base de DNA
         const tasks = Array.from({ length: q }).map(async (_, i) => {
+          // Reduzido para 100ms para uma sincronização ultra-rápida real
           await new Promise(r => setTimeout(r, i * 100)); 
           try {
             const creative = await generateCompleteCreative(updatedRequest, i);
             setCreatives(prev => [...prev, creative]);
             return creative;
           } catch (e) {
-            console.error(`Falha no criativo ${i}:`, e);
+            console.error(e);
             return null;
           }
         });
-        
         await Promise.all(tasks);
         setStatus(GenerationStatus.SUCCESS);
       } else {
@@ -81,8 +88,7 @@ const App: React.FC = () => {
         setStatus(GenerationStatus.SUCCESS);
       }
     } catch (err: any) {
-      console.error(err);
-      setErrorMessage(err.message || "A Engine de Identidade Visual falhou.");
+      setErrorMessage(err.message || "A Engine Criativa falhou ao processar a prompt.");
       setStatus(GenerationStatus.ERROR);
     }
   };
@@ -123,7 +129,7 @@ const App: React.FC = () => {
             className={`px-5 py-2.5 rounded-xl text-[10px] font-black border transition-all ${request.ultraSpeed ? 'bg-indigo-600 border-indigo-500 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]' : 'bg-white/5 border-white/5 text-slate-500'}`}
           >
             <Zap className={`w-3.5 h-3.5 inline mr-2 ${request.ultraSpeed ? 'fill-current' : ''}`} /> 
-            {request.ultraSpeed ? 'ULTRA FLASH' : 'MODO QUALIDADE'}
+            {request.ultraSpeed ? 'SINCRONIA ULTRA' : 'MÁXIMA QUALIDADE'}
           </button>
         </div>
       </nav>
@@ -139,16 +145,17 @@ const App: React.FC = () => {
               <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
                 <AlertTriangle className="w-8 h-8 text-red-500" />
               </div>
-              <h3 className="text-sm font-black text-white uppercase tracking-[0.2em] mb-4">Falha de Identidade</h3>
+              <h3 className="text-sm font-black text-white uppercase tracking-[0.2em] mb-4">Erro na Prompt Master</h3>
               <p className="text-[11px] text-red-400 font-bold uppercase tracking-[0.15em] mb-8 leading-relaxed max-w-sm mx-auto">{errorMessage}</p>
-              <button onClick={() => setStatus(GenerationStatus.IDLE)} className="flex items-center gap-3 mx-auto text-[10px] font-black text-white uppercase tracking-[0.2em] bg-red-500 px-10 py-5 rounded-3xl hover:bg-red-600 transition-all shadow-xl active:scale-95">Tentar Novamente</button>
+              <button onClick={() => setStatus(GenerationStatus.IDLE)} className="flex items-center gap-3 mx-auto text-[10px] font-black text-white uppercase tracking-[0.2em] bg-red-500 px-10 py-5 rounded-3xl hover:bg-red-600 transition-all shadow-xl active:scale-95">Revisar Prompt</button>
             </div>
           )}
 
           {creatives.length === 0 && status !== GenerationStatus.LOADING && status !== GenerationStatus.ERROR ? (
             <div className="h-full flex flex-col items-center justify-center opacity-10">
               <Sparkles className="w-24 h-24 text-indigo-500 mb-8" />
-              <h3 className="text-[20px] font-black uppercase tracking-[0.5em] text-white">Pronto para Gerar</h3>
+              <h3 className="text-[20px] font-black uppercase tracking-[0.5em] text-white">Pronto para Criar</h3>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2">Sua prompt dita as regras</p>
             </div>
           ) : (
             <div className="max-w-[1700px] mx-auto space-y-12 pb-24">
@@ -157,9 +164,9 @@ const App: React.FC = () => {
                   <Loader />
                   <div className="mt-10 space-y-3 text-center">
                     <p className="text-[13px] font-black text-indigo-400 uppercase tracking-[0.6em] animate-pulse">
-                      {request.ultraSpeed ? `SINCRONIZANDO MARCA (${creatives.length}/${request.quantity})...` : 'RENDERIZANDO...'}
+                      {request.ultraSpeed ? `SINCRONIZANDO PROMPT (${creatives.length}/${request.quantity})...` : 'RENDERIZANDO CENA CRIATIVA...'}
                     </p>
-                    <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Garantindo unidade estética e proibição total de neon</p>
+                    <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Garantindo ortografia 100% precisa nos estilos selecionados</p>
                   </div>
                 </div>
               )}
