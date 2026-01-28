@@ -250,17 +250,18 @@ const AdForm: React.FC<AdFormProps> = ({ request, onChange, onGenerate, isLoadin
                   const updated = isSelected 
                     ? current.filter(x => x !== t.id) 
                     : [...current, t.id];
-                  // Manter pelo menos um selecionado
-                  if (updated.length > 0) handleChange('creativeType', updated);
+                  // Lógica de toggle: se clicar em um selecionado, ele remove. 
+                  // Permitimos remover todos aqui, o geminiService lidará com o padrão.
+                  handleChange('creativeType', updated);
                 }}
                 className={`py-3 px-3 text-[9px] font-bold rounded-xl border transition-all flex flex-col items-center gap-2 ${
                   isSelected 
-                  ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' 
+                  ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg scale-[1.02]' 
                   : `${colors.inputBg} ${colors.inputBorder} text-slate-500 hover:border-indigo-500/50`
                 }`}
               >
                 <t.icon className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-slate-400'}`} />
-                <span className="text-center">{t.label}</span>
+                <span className="text-center leading-tight">{t.label}</span>
               </button>
             );
           })}

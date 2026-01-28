@@ -76,15 +76,16 @@ export const generateCompleteCreative = async (req: AdRequest, index: number): P
     const copy: AdCopy = JSON.parse(copyRes.text);
 
     // 2. Renderização da Imagem (Foco em Ortografia e Estilo)
-    let styleBase = "ESTILOS VISUAIS SELECIONADOS: " + req.creativeType.join(", ") + ". ";
+    const activeTypes = req.creativeType.length > 0 ? req.creativeType : ['Ultra-Realista'];
+    let styleBase = "ESTILOS VISUAIS SELECIONADOS: " + activeTypes.join(", ") + ". ";
     
-    if (req.creativeType.includes('Ultra-Realista')) {
+    if (activeTypes.includes('Ultra-Realista')) {
       styleBase += "PHOTOREALISTIC 8K, cinematic lighting, shot on Sony A7R IV, high-end commercial photography, depth of field, sharp focus. ";
     } 
-    if (req.creativeType.includes('Apenas Texto (Tipográfico)')) {
+    if (activeTypes.includes('Apenas Texto (Tipográfico)')) {
       styleBase += "TYPOGRAPHIC DESIGN, focus 100% on text layout, elegant fonts, creative graphic design. TEXT TO WRITE: '" + copy.headline + "'. ENSURE 100% CORRECT SPELLING. ";
     }
-    if (req.creativeType.includes('Híbrido')) {
+    if (activeTypes.includes('Híbrido')) {
       styleBase += "HYBRID FUSION: A seamless blend of PHOTOREALISTIC 8K textures, ARTISTIC DIGITAL ILLUSTRATION elements, and BOLD TYPOGRAPHIC design. Mix reality with creative graphics. ";
     }
 

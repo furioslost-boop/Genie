@@ -64,13 +64,24 @@ const AdPreviewCard: React.FC<AdPreviewCardProps> = ({ creative, onDelete }) => 
     });
 
     const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 20;
+    const contentWidth = pageWidth - (margin * 2);
     let yPos = 20;
+
+    const checkPageBreak = (neededHeight: number) => {
+      if (yPos + neededHeight > pageHeight - margin) {
+        doc.addPage();
+        yPos = margin;
+        return true;
+      }
+      return false;
+    };
 
     // Header
     doc.setFont("helvetica", "bold");
     doc.setFontSize(22);
-    doc.setTextColor(79, 70, 229); // Indigo 600
+    doc.setTextColor(79, 70, 229); 
     doc.text("AdStudio Ultra - Creative Pack", margin, yPos);
     yPos += 10;
 
@@ -80,12 +91,14 @@ const AdPreviewCard: React.FC<AdPreviewCardProps> = ({ creative, onDelete }) => 
     yPos += 15;
 
     // Creative Image
-    const imgWidth = pageWidth - (margin * 2);
-    const imgHeight = (imgWidth / 1); // Simplificado
+    const imgWidth = contentWidth;
+    const imgHeight = (imgWidth / 1.1); 
+    checkPageBreak(imgHeight + 10);
     doc.addImage(creative.imageUrl, 'PNG', margin, yPos, imgWidth, imgHeight);
     yPos += imgHeight + 15;
 
     // Hook
+    checkPageBreak(25);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(79, 70, 229);
@@ -94,10 +107,12 @@ const AdPreviewCard: React.FC<AdPreviewCardProps> = ({ creative, onDelete }) => 
     doc.setFont("helvetica", "italic");
     doc.setFontSize(12);
     doc.setTextColor(30);
-    doc.text(`"${creative.copy.hook}"`, margin, yPos, { maxWidth: pageWidth - (margin * 2) });
-    yPos += 15;
+    const hookLines = doc.splitTextToSize(`"${creative.copy.hook}"`, contentWidth);
+    doc.text(hookLines, margin, yPos);
+    yPos += (hookLines.length * 6) + 12;
 
     // Headline
+    checkPageBreak(20);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(100);
@@ -105,10 +120,12 @@ const AdPreviewCard: React.FC<AdPreviewCardProps> = ({ creative, onDelete }) => 
     yPos += 7;
     doc.setFontSize(14);
     doc.setTextColor(0);
-    doc.text(creative.copy.headline.toUpperCase(), margin, yPos, { maxWidth: pageWidth - (margin * 2) });
-    yPos += 15;
+    const headlineLines = doc.splitTextToSize(creative.copy.headline.toUpperCase(), contentWidth);
+    doc.text(headlineLines, margin, yPos);
+    yPos += (headlineLines.length * 8) + 12;
 
     // Primary Text
+    checkPageBreak(15);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(100);
@@ -117,11 +134,24 @@ const AdPreviewCard: React.FC<AdPreviewCardProps> = ({ creative, onDelete }) => 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
     doc.setTextColor(50);
-    const splitText = doc.splitTextToSize(creative.copy.primaryText, pageWidth - (margin * 2));
-    doc.text(splitText, margin, yPos);
-    yPos += (splitText.length * 5) + 10;
+    const splitText = doc.splitTextToSize(creative.copy.primaryText, contentWidth);
+    
+    for (const line of splitText) {
+      if (checkPageBreak(7)) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.text("(Continuação do Texto Principal)", margin, yPos);
+        yPos += 8;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+      }
+      doc.text(line, margin, yPos);
+      yPos += 6.5; 
+    }
+    yPos += 12;
 
     // CTA
+    checkPageBreak(15);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(100);
@@ -162,7 +192,6 @@ const AdPreviewCard: React.FC<AdPreviewCardProps> = ({ creative, onDelete }) => 
 
         {/* Content Area */}
         <div className="flex-1 flex flex-col p-5 space-y-5">
-          {/* Responsive Image Container */}
           <div 
             className={`relative rounded-2xl overflow-hidden bg-slate-50 border border-slate-100 group/img cursor-zoom-in shadow-inner w-full ${getAspectRatioClass(creative.aspectRatio)}`}
             onClick={() => setIsFullscreen(true)}
@@ -179,7 +208,6 @@ const AdPreviewCard: React.FC<AdPreviewCardProps> = ({ creative, onDelete }) => 
             </div>
           </div>
 
-          {/* Copy Area */}
           <div className="space-y-4">
             <div className="p-4 bg-indigo-50/50 rounded-xl border border-indigo-100/50 relative overflow-hidden">
               <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest mb-1 block">HOOK DE IMPACTO</span>
